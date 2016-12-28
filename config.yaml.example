@@ -1,0 +1,22 @@
+#####################################################################
+#                                                                   #
+#    This is an example configuration file for discord-rtmp-bot.    #
+#      Please read and change all options to suit your setup.       #
+#                                                                   #
+#####################################################################
+
+debug: false
+
+login:
+    discord_client_key: ""
+
+stream:
+    stream_url: ""
+    rtmp_endpoint: ""
+    media_directory: "/var/www/media"
+
+channels:
+    whitelist: ["cytube"]
+
+ffmpeg:
+    font_file: "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"

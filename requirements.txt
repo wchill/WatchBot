@@ -1,0 +1,13 @@
+aiohttp==1.0.5
+async-timeout==1.1.0
+cffi==1.9.1
+chardet==2.3.0
+discord.py==0.16.0
+ffmpy==0.2.2
+multidict==2.1.4
+pkg-resources==0.0.0
+pycparser==2.17
+pymediainfo==2.1.5
+ruamel.yaml==0.13.7
+six==1.10.0
+websockets==3.2
