@@ -22,8 +22,12 @@ class DiscordMediaPlayer(object):
     def __init__(self, stream_url):
         self._stream_url = stream_url
         self._ffmpeg_process = None
-        self._current_time = None
+        self._seek_time = 0
+        self._offset_time = 0
         self._total_duration = None
+        self._current_video = None
+        self._current_audio_track = 1
+        self._current_subtitle_track = None
 
     @staticmethod
     def get_human_readable_track_info(file_path):
@@ -65,15 +69,20 @@ class DiscordMediaPlayer(object):
             return '{}:{:05.2f}'.format(mins, secs)
 
     def is_video_playing(self):
-        return self._ffmpeg_process is not None
+        return self._ffmpeg_process and self._ffmpeg_process.process.returncode is None
 
     def get_video_time(self):
-        return self._current_time, self._total_duration
+        return self._seek_time + self._offset_time, self._total_duration
+
+    def get_video_info(self):
+        return self._current_video, self._current_audio_track, self._current_subtitle_track
 
     async def stop_video(self):
-        if self._ffmpeg_process and self._ffmpeg_process.process.returncode is None:
+        if self.is_video_playing():
             try:
+                print('Stopping FFmpeg')
                 self._ffmpeg_process.process.terminate()
+                await self._ffmpeg_process.process.wait()
             except ffmpy3.FFRuntimeError:
                 pass
 
@@ -89,16 +98,12 @@ class DiscordMediaPlayer(object):
         if not os.path.exists(file_path):
             raise FileNotFoundError('File not found: {}'.format(file_path))
 
-        if self._ffmpeg_process:
-            self.stop_video()
+        self._seek_time = seek_time
+        self._current_video = file_path
+        self._current_audio_track = selected_audio_track
+        self._current_subtitle_track = selected_subtitle_track
 
         output_params = [
-            # Tell ffmpeg to start encoding from seek_time seconds into the video
-            '-ss', str(seek_time),
-
-            # Input file
-            '-i', file_path,
-
             # Select the first video track (if there are multiple)
             '-map', '0:v:0',
 
@@ -117,7 +122,8 @@ class DiscordMediaPlayer(object):
 
         # Third filter: Draw timestamp for current frame in the video to make seeking easier
         # TODO: make these parameters more configurable
-        vf_str += 'drawtext=\'fontfile={}: fontcolor=white: x=0: y=h-line_h-5: fontsize=24: boxcolor=black@0.5: box=1: text=%{{pts\\:hms}}\''.format(FONT_FILE)
+        vf_str += 'drawtext=\'fontfile={}: fontcolor=white: x=0: y=h-line_h-5: fontsize=24: boxcolor=black@0.5: box=1: text=%{{pts\\:hms}}\','.format(FONT_FILE)
+        vf_str += 'setpts=PTS-STARTPTS'
 
         # TODO: make these more configurable
         output_params += [
@@ -157,36 +163,60 @@ class DiscordMediaPlayer(object):
         ]
 
         self._ffmpeg_process = ffmpy3.FFmpeg(
-            # Read input file at the frame rate it's encoded at (crucial for live streams and synchronization)
             global_options=[
-                '-re'
+                # Tell ffmpeg to start encoding from seek_time seconds into the video
+                '-ss', str(seek_time),
+
+                # Read input file at the frame rate it's encoded at (crucial for live streams and synchronization)
+                '-re',
             ],
             inputs={file_path: None},
             outputs={self._stream_url: output_params},
         )
 
-        await self._ffmpeg_process.run(stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        print('Starting FFmpeg')
+        print(self._ffmpeg_process.cmd)
 
+        # Start FFmpeg, redirect stderr so we can keep track of encoding progress
+        await self._ffmpeg_process.run(stderr=asyncio.subprocess.PIPE)
+
+        # Buffer for incomplete line output
         line_buf = bytearray()
 
+        my_stderr = self._ffmpeg_process.process.stderr
+
         while True:
-            in_buf = await self._ffmpeg_process.process.stderr.read(128)
+            # Read some FFmpeg output (128 bytes is about 1 line worth)
+            in_buf = await my_stderr.read(128)
+
+            # Break if EOF
             if not in_buf:
                 break
+
+            # FFmpeg encoding progress is displayed on the same line using CR, so replace with LF if present
             in_buf = in_buf.replace(b'\r', b'\n')
+
+            # Append to the buffer
             line_buf.extend(in_buf)
 
+            # Process each line present in the buffer
             while b'\n' in line_buf:
                 line, _, line_buf = line_buf.partition(b'\n')
                 line = str(line)
+                # print(line)
 
                 if self._total_duration is None:
+                    # Get total video duration
                     match = self.TOTAL_DURATION_REGEX.search(line)
                     if match:
                         self._total_duration = self.convert_to_secs(**match.groupdict())
                 else:
+                    # Get current video playback duration
                     match = self.CURRENT_PROGRESS_REGEX.search(line)
                     if match:
-                        self._current_time = self.convert_to_secs(**match.groupdict())
+                        self._offset_time = self.convert_to_secs(**match.groupdict())
 
-        return self.stop_video()
+        # At this point, FFmpeg will already have stopped without us having to wait explicitly on it
+        # because it will close stderr when it is complete (breaking the loop)
+        print('FFmpeg finished')
+        return self._ffmpeg_process.process.returncode

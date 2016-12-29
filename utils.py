@@ -26,3 +26,19 @@ async def ask_for_int(client, message, channel, author, lower_bound=None, upper_
 
 def escape_msg(msg):
     return re.sub(r'(?P<c>[`*_\[\]~])', r'\\\g<c>', msg)
+
+
+def parse_timestamp(time_str):
+    match = re.search(r'(?:(\d+):)?(?:(\d+):)?(?:(\d+)(?:\.(\d+))?)', time_str)
+    if match:
+        hrs, mins, secs, ms = match.group(1, 2, 3, 4)
+        if hrs and mins is None:
+            mins = hrs
+            hrs = None
+        hrs = int(hrs) if hrs else 0
+        mins = int(mins) if mins else 0
+        secs = int(secs)
+        ms = int(ms) if ms else 0
+        time = 3600 * hrs + 60 * mins + secs + 0.01 * ms
+        return time
+    return None

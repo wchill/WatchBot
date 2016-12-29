@@ -1,8 +1,9 @@
 import os
+import re
 
 import discord
 
-from utils import escape_msg, ask_for_int
+from utils import escape_msg, ask_for_int, parse_timestamp
 import media_player
 import file_explorer
 
@@ -20,7 +21,10 @@ class CytubeBot(discord.Client):
 
         self._commands = {
             'stream': self.start_stream,
-            'stopstream': self.stop_stream,
+            'streamstop': self.stop_stream,
+            'streamff': self.ff_stream,
+            'streamrew': self.rew_stream,
+            'streamseek': self.seek_stream,
             'listdirs': self.list_dirs,
             'listfiles': self.list_files,
             'cd': self.change_directory
@@ -74,11 +78,9 @@ class CytubeBot(discord.Client):
         await self.set_bot_presence(absolute_path)
         await self.send_message(message.channel, 'Stream started.')
 
-        exitcode = await self._media_player.play_video(absolute_path, audio_track, subtitle_track, 0.0)
+        await self._media_player.play_video(absolute_path, audio_track, subtitle_track, 0.0)
 
-        if exitcode == 0:
-            await self.set_bot_presence(None)
-            await self.send_message(message.channel, 'Stream finished.')
+        await self.set_bot_presence(None)
 
     async def stop_stream(self, message):
         if not self._media_player.is_video_playing():
@@ -91,6 +93,43 @@ class CytubeBot(discord.Client):
             await self.send_message(message.channel, 'Stream stopped at {}.'.format(self._media_player.convert_secs_to_str(current_time)))
         else:
             await self.send_message(message.channel, 'Stream stopped.')
+
+    async def _seek_stream(self, channel, time):
+        if not self._media_player.is_video_playing():
+            await self.send_message(channel, 'Stream not currently playing.')
+            return
+
+        await self.send_message(channel, 'Restarting stream at {}.'.format(self._media_player.convert_secs_to_str(time)))
+        video, audio, sub = self._media_player.get_video_info()
+        await self._media_player.stop_video()
+        await self._media_player.play_video(video, audio, sub, time)
+
+    async def seek_stream(self, message):
+        time = parse_timestamp(message.content.partition(' ')[2])
+        if time:
+            await self._seek_stream(message.channel, time)
+        else:
+            await self.send_message(message.channel, 'Invalid parameter.')
+
+    async def ff_stream(self, message):
+        time = parse_timestamp(message.content.partition(' ')[2])
+        if time:
+            current, _ = self._media_player.get_video_time()
+            await self._seek_stream(message.channel, current + time)
+        else:
+            await self.send_message(message.channel, 'Invalid parameter.')
+
+    async def rew_stream(self, message):
+        time = parse_timestamp(message.content.partition(' ')[2])
+        if time:
+            current, _ = self._media_player.get_video_time()
+
+            if current + time < 0:
+                current = time
+
+            await self._seek_stream(message.channel, current - time)
+        else:
+            await self.send_message(message.channel, 'Invalid parameter.')
 
     async def list_dirs(self, message):
         dir_names = self._file_explorer.list_nonhidden_dirnames_in_current_dir()

@@ -64,7 +64,7 @@ class FFmpeg(object):
         return '<{0!r} {1!r}>'.format(self.__class__.__name__, self.cmd)
 
     async def run(self, input_data=None, stdout=None, stderr=None):
-        """Execute FFmpeg command line.
+        """Asynchronously execute FFmpeg command line.
 
         ``input_data`` can contain input for FFmpeg in case ``pipe`` protocol is used for input.
         ``stdout`` and ``stderr`` specify where to redirect the ``stdout`` and ``stderr`` of the
@@ -72,6 +72,11 @@ class FFmpeg(object):
         (this mode should normally only be used for debugging purposes). If FFmpeg ``pipe`` protocol
         is used for output, ``stdout`` must be redirected to a pipe by passing `subprocess.PIPE` as
         ``stdout`` argument.
+
+        Note that the parent process is responsible for reading any output from stdout/stderr. This
+        should be done even if the output will not be used since the process may otherwise deadlock.
+        This can be done by calling ``communicate()`` on the returned Process or by manually reading
+        from the pipes as necessary.
 
         Returns a reference to the child process created for use by the parent program.
 
@@ -110,6 +115,12 @@ class FFmpeg(object):
         return self.process
 
     async def wait(self):
+        """Asynchronously wait for FFmpeg to complete execution.
+
+        :return: 0 if FFmpeg finished successfully, None if FFmpeg was not started
+        :rtype: int
+        :raise: `FFRuntimeError` if FFmpeg exited with an error
+        """
         if not self.process:
             return None
         exitcode = await self.process.wait()
