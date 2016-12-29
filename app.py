@@ -1,7 +1,7 @@
 import ruamel.yaml
 import cytube_bot
 
-CONFIG_FILE = 'config.yml'
+CONFIG_FILE = 'config.yaml'
 
 with open(CONFIG_FILE, 'r') as f:
     settings = ruamel.yaml.load(f.read(), ruamel.yaml.RoundTripLoader)

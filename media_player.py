@@ -1,24 +1,32 @@
 import asyncio
 import os
+import re
 
-import ffmpy
+import ffmpy3
 from pymediainfo import MediaInfo
 
 import ruamel.yaml
-CONFIG_FILE = 'config.yml'
+CONFIG_FILE = 'config.yaml'
 
 with open(CONFIG_FILE, 'r') as f:
     settings = ruamel.yaml.load(f.read(), ruamel.yaml.RoundTripLoader)
 
 FONT_FILE = settings['ffmpeg']['font_file']
 
+
 class DiscordMediaPlayer(object):
+
+    TOTAL_DURATION_REGEX = re.compile(r'Duration: (?P<hrs>[\d]+):(?P<mins>[\d]+):(?P<secs>[\d]+)\.(?P<ms>[\d]+)')
+    CURRENT_PROGRESS_REGEX = re.compile(r'time=(?P<hrs>[\d]+):(?P<mins>[\d]+):(?P<secs>[\d]+)\.(?P<ms>[\d]+)')
 
     def __init__(self, stream_url):
         self._stream_url = stream_url
         self._ffmpeg_process = None
+        self._current_time = None
+        self._total_duration = None
 
-    def get_human_readable_track_info(self, file_path):
+    @staticmethod
+    def get_human_readable_track_info(file_path):
         mi = MediaInfo.parse(file_path)
         audio_tracks, subtitle_tracks = [], []
         for track in mi.tracks:
@@ -43,20 +51,39 @@ class DiscordMediaPlayer(object):
 
         return audio_tracks, subtitle_tracks
 
+    @staticmethod
+    def convert_to_secs(hrs, mins, secs, ms):
+        return int(hrs) * 3600 + int(mins) * 60 + int(secs) + int(ms) * 0.01
+
+    @staticmethod
+    def convert_secs_to_str(secs):
+        hrs, secs = int(secs // 3600), secs % 3600
+        mins, secs = int(secs // 60), secs % 60
+        if hrs > 0:
+            return '{}:{:02d}:{:05.2f}'.format(hrs, mins, secs)
+        else:
+            return '{}:{:05.2f}'.format(mins, secs)
+
     def is_video_playing(self):
         return self._ffmpeg_process is not None
 
+    def get_video_time(self):
+        return self._current_time, self._total_duration
+
     async def stop_video(self):
-        exitcode = None
-        if self._ffmpeg_process:
+        if self._ffmpeg_process and self._ffmpeg_process.process.returncode is None:
             try:
                 self._ffmpeg_process.process.terminate()
-            except ffmpy.FFRuntimeError:
+            except ffmpy3.FFRuntimeError:
                 pass
 
+        if not self._ffmpeg_process or not self._ffmpeg_process.process:
+            exitcode = None
+        else:
             exitcode = self._ffmpeg_process.process.returncode
-            self._ffmpeg_process = None
-        return exitcode
+
+        current, total = self.get_video_time()
+        return exitcode, current, total
 
     async def play_video(self, file_path, selected_audio_track=1, selected_subtitle_track=None, seek_time=0):
         if not os.path.exists(file_path):
@@ -110,7 +137,8 @@ class DiscordMediaPlayer(object):
             # Use YUV color space, 4:2:0 chroma subsampling, 8-bit render depth
             '-pix_fmt', 'yuv420p',
 
-            # Set keyframe interval to 24 (RTMP clients need to wait for the next keyframe, so this is a 1 second startup time)
+            # Set keyframe interval to 24
+            # (RTMP clients need to wait for the next keyframe, so this is a 1 second startup time)
             '-g', '24',
 
             # Use AAC-LC audio codec, 128Kbps stereo at 44.1KHz sampling rate
@@ -128,18 +156,37 @@ class DiscordMediaPlayer(object):
             '-f', 'flv'
         ]
 
-        self._ffmpeg_process = ffmpy.FFmpeg(
+        self._ffmpeg_process = ffmpy3.FFmpeg(
             # Read input file at the frame rate it's encoded at (crucial for live streams and synchronization)
             global_options=[
                 '-re'
             ],
             inputs={file_path: None},
-            outputs={self._stream_url: output_params}
+            outputs={self._stream_url: output_params},
         )
 
-        loop = asyncio.get_event_loop()
-        try:
-            await loop.run_in_executor(None, self._ffmpeg_process.run)
-        except ffmpy.FFRuntimeError:
-            pass
+        await self._ffmpeg_process.run(stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+
+        line_buf = bytearray()
+
+        while True:
+            in_buf = await self._ffmpeg_process.process.stderr.read(128)
+            if not in_buf:
+                break
+            in_buf = in_buf.replace(b'\r', b'\n')
+            line_buf.extend(in_buf)
+
+            while b'\n' in line_buf:
+                line, _, line_buf = line_buf.partition(b'\n')
+                line = str(line)
+
+                if self._total_duration is None:
+                    match = self.TOTAL_DURATION_REGEX.search(line)
+                    if match:
+                        self._total_duration = self.convert_to_secs(**match.groupdict())
+                else:
+                    match = self.CURRENT_PROGRESS_REGEX.search(line)
+                    if match:
+                        self._current_time = self.convert_to_secs(**match.groupdict())
+
         return self.stop_video()

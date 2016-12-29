@@ -90,3 +90,6 @@ ENV/
 
 # Configuration files
 config.yaml
+
+# JetBrains stuff
+.idea
