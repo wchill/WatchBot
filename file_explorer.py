@@ -81,7 +81,6 @@ class FileExplorer(object):
                 dirs.append(entry)
         if self.is_safe_path(self.get_complete_path('..')):
             dirs.append(PseudoDirEntry('..', self._current_path))
-        print(dirs)
         return dirs
 
     def change_directory(self, path, relative=True):

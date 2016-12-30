@@ -1,5 +1,6 @@
 import re
 import humanize
+from io import StringIO
 
 async def ask_for_int(bot, message, author, lower_bound=None, upper_bound=None, timeout=30, timeout_msg=None, default=None):
     def check(msg):
@@ -55,24 +56,24 @@ def format_dir_entry(num, max_num, entry):
 
 def format_file_entry(num, max_num, entry):
     MAX_WIDTH = 78
+
+    output = StringIO()
+
     entry_str = '{pad}{num}) '.format(num=num, pad=(len(str(max_num)) - len(str(num))) * ' ')
-    name_split = escape_code_block(entry.name).split(' ')
 
-    all_strs = [entry_str]
     current_width = len(entry_str)
+    output.write(entry_str)
 
-    for s in name_split:
-        remaining = MAX_WIDTH - current_width
-        all_strs.append('{} '.format(s))
-        if remaining == len(s):
-            current_width = 0
-        elif remaining > len(s):
-            current_width += len(s) + 1
-        else:
-            current_width = (len(s) + 1) % MAX_WIDTH
+    escaped_name = escape_code_block(entry.name)
+    output.write(escaped_name)
+    current_width += len(entry.name)
 
     size_str = humanize.naturalsize(entry.stat().st_size)
 
-    all_strs.append(' ' * (MAX_WIDTH - current_width - len(size_str)))
-    all_strs.append(size_str)
-    return ''.join(all_strs)
+    if MAX_WIDTH - current_width <= len(size_str):
+        output.write('\n')
+        current_width = 0
+
+    output.write(' ' * (MAX_WIDTH - current_width - len(size_str)))
+    output.write(size_str)
+    return output.getvalue()
