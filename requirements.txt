@@ -3,6 +3,7 @@ async-timeout==1.1.0
 cffi==1.9.1
 chardet==2.3.0
 discord.py==0.16.0
+humanize==0.5.1
 multidict==2.1.4
 pycparser==2.17
 pymediainfo==2.1.5
