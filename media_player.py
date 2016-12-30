@@ -14,6 +14,17 @@ with open(CONFIG_FILE, 'r') as f:
 FONT_FILE = settings['ffmpeg']['font_file']
 
 
+class Video(object):
+
+    def __init__(self, absolute_path, name=None, seek_time=0.0, audio_track=1, subtitle_track=None):
+        self.filename = os.path.basename(absolute_path)
+        self.name = name if name else os.path.splitext(self.filename)[0]
+        self.absolute_path = absolute_path
+        self.seek_time = seek_time
+        self.audio_track = audio_track
+        self.subtitle_track = subtitle_track
+
+
 class DiscordMediaPlayer(object):
 
     TOTAL_DURATION_REGEX = re.compile(r'Duration: (?P<hrs>[\d]+):(?P<mins>[\d]+):(?P<secs>[\d]+)\.(?P<ms>[\d]+)')
@@ -22,12 +33,9 @@ class DiscordMediaPlayer(object):
     def __init__(self, stream_url):
         self._stream_url = stream_url
         self._ffmpeg_process = None
-        self._seek_time = 0
         self._offset_time = 0
         self._total_duration = None
         self._current_video = None
-        self._current_audio_track = 1
-        self._current_subtitle_track = None
 
     @staticmethod
     def get_human_readable_track_info(file_path):
@@ -36,7 +44,7 @@ class DiscordMediaPlayer(object):
         for track in mi.tracks:
             if track.track_type == 'Audio':
                 audio_tracks.append(
-                    '#{num}: {name} ({lang}, {codec} - {channels})'.format(
+                    '{num}) {name} ({lang}, {codec} - {channels})'.format(
                         num=track.stream_identifier + 1,
                         name=track.title or 'Untitled',
                         lang=track.other_language[0] or 'Unknown language',
@@ -46,10 +54,10 @@ class DiscordMediaPlayer(object):
                 )
             elif track.track_type == 'Text':
                 subtitle_tracks.append(
-                    '#{num}: {name} ({lang})'.format(
+                    '{num}) {name} ({lang})'.format(
                         num=track.stream_identifier + 1,
                         name=track.title or 'Untitled',
-                        lang=track.language or 'Unknown language'
+                        lang=track.other_language[0] or 'Unknown language'
                     )
                 )
 
@@ -72,10 +80,10 @@ class DiscordMediaPlayer(object):
         return self._ffmpeg_process and self._ffmpeg_process.process.returncode is None
 
     def get_video_time(self):
-        return self._seek_time + self._offset_time, self._total_duration
+        return self._current_video.seek_time + self._offset_time, self._total_duration
 
-    def get_video_info(self):
-        return self._current_video, self._current_audio_track, self._current_subtitle_track
+    def get_current_video(self):
+        return self._current_video
 
     async def stop_video(self):
         if self.is_video_playing():
@@ -94,31 +102,28 @@ class DiscordMediaPlayer(object):
         current, total = self.get_video_time()
         return exitcode, current, total
 
-    async def play_video(self, file_path, selected_audio_track=1, selected_subtitle_track=None, seek_time=0):
-        if not os.path.exists(file_path):
-            raise FileNotFoundError('File not found: {}'.format(file_path))
+    async def play_video(self, video):
+        if not os.path.exists(video.absolute_path):
+            raise FileNotFoundError('File not found: {}'.format(video.filename))
 
-        self._seek_time = seek_time
-        self._current_video = file_path
-        self._current_audio_track = selected_audio_track
-        self._current_subtitle_track = selected_subtitle_track
+        self._current_video = video
 
         output_params = [
             # Select the first video track (if there are multiple)
             '-map', '0:v:0',
 
             # Select the specified audio track (if there are multiple) - note that it's 0 indexed
-            '-map', '0:a:{}'.format(selected_audio_track - 1)
+            '-map', '0:a:{}'.format(video.subtitle_track - 1)
         ]
 
         # Build filtergraph
         # First filter: change frame timestamps so that they are correct when starting at seek_time
-        vf_str = 'setpts=PTS+{}/TB,'.format(seek_time)
+        vf_str = 'setpts=PTS+{}/TB,'.format(video.seek_time)
 
         # Second filter: render embedded subtitle track from the media file
         # Note that subtitles rely on the above timestamps and that tracks are 0 indexed
-        if selected_subtitle_track:
-            vf_str += 'subtitles=\'{}\':si={},'.format(file_path, selected_subtitle_track - 1)
+        if video.subtitle_track:
+            vf_str += 'subtitles=\'{}\':si={},'.format(video.absolute_path, video.subtitle_track - 1)
 
         # Third filter: Draw timestamp for current frame in the video to make seeking easier
         # TODO: make these parameters more configurable
@@ -165,12 +170,12 @@ class DiscordMediaPlayer(object):
         self._ffmpeg_process = ffmpy3.FFmpeg(
             global_options=[
                 # Tell ffmpeg to start encoding from seek_time seconds into the video
-                '-ss', str(seek_time),
+                '-ss', str(video.seek_time),
 
                 # Read input file at the frame rate it's encoded at (crucial for live streams and synchronization)
                 '-re',
             ],
-            inputs={file_path: None},
+            inputs={video.absolute_path: None},
             outputs={self._stream_url: output_params},
         )
 
