@@ -113,7 +113,7 @@ class DiscordMediaPlayer(object):
             '-map', '0:v:0',
 
             # Select the specified audio track (if there are multiple) - note that it's 0 indexed
-            '-map', '0:a:{}'.format(video.subtitle_track - 1)
+            '-map', '0:a:{}'.format(video.audio_track - 1)
         ]
 
         # Build filtergraph
@@ -183,7 +183,7 @@ class DiscordMediaPlayer(object):
         print(self._ffmpeg_process.cmd)
 
         # Start FFmpeg, redirect stderr so we can keep track of encoding progress
-        await self._ffmpeg_process.run(stderr=asyncio.subprocess.PIPE)
+        await self._ffmpeg_process.run_async(stderr=asyncio.subprocess.PIPE)
 
         # Buffer for incomplete line output
         line_buf = bytearray()

@@ -137,6 +137,7 @@ class CytubeBot(object):
 
         self._media_queue.extend(self._backup_queue)
         self._backup_queue = None
+        await self._bot.say('Resuming stream.')
 
     @commands.command(name='streamstop', no_pm=True)
     async def stop_stream(self):
@@ -161,8 +162,8 @@ class CytubeBot(object):
         await self._bot.say('Restarting stream at {}.'.format(self._media_player.convert_secs_to_str(time)))
         video = self._media_player.get_current_video()
         video.seek_time = time
+        self._media_queue.appendleft(video)
         await self._media_player.stop_video()
-        await self._media_player.play_video(video)
 
     @commands.command(name='streamseek', no_pm=True)
     async def seek_stream(self, timestamp: str):
