@@ -41,7 +41,7 @@ class CytubeBot(object):
         print('Logged in as {}'.format(self._bot.user.name))
         print('--------------')
 
-    async def _start_stream(self, ctx, relative_path: str):
+    async def _start_stream(self, relative_path: str):
         await self._bot.say('Selected file: `{}`.'.format(escape_code_block(os.path.basename(relative_path))))
         absolute_path = self._file_explorer.get_complete_path(relative_path)
 
@@ -52,18 +52,19 @@ class CytubeBot(object):
         # Ask user to select audio track if multiple present
         if len(audio_tracks) > 1:
             ask_str = 'Please select an audio track:\n```{}```'.format(escape_code_block('\n'.join(audio_tracks)))
-            audio_track = await ask_for_int(self._bot, ask_str, ctx.message.author, lower_bound=1,
+            audio_track = await ask_for_int(self._bot, ask_str, lower_bound=1,
                                             upper_bound=len(audio_tracks) + 1, default=1)
 
         # Ask user to select subtitle track if multiple present
         if len(subtitle_tracks) > 1:
             ask_str = 'Please select a subtitle track:\n```{}```'.format(escape_code_block('\n'.join(subtitle_tracks)))
-            subtitle_track = await ask_for_int(self._bot, ask_str, ctx.message.author, lower_bound=1,
+            subtitle_track = await ask_for_int(self._bot, ask_str, lower_bound=1,
                                                upper_bound=len(subtitle_tracks) + 1, default=1)
 
         await self._bot.say('Added to queue (#{}).'.format(len(self._media_queue) + 1))
 
-        self._media_queue.append(media_player.Video(absolute_path, audio_track=audio_track, subtitle_track=subtitle_track))
+        self._media_queue.append(
+            media_player.Video(absolute_path, audio_track=audio_track, subtitle_track=subtitle_track))
 
     async def _process_media_queue(self):
         while True:
@@ -77,33 +78,35 @@ class CytubeBot(object):
             await self._media_player.play_video(video)
             await self.set_bot_presence()
 
-    @commands.command(name='stream', pass_context=True, no_pm=True)
-    async def start_stream(self, ctx, relative_path: str):
-        if not self._file_explorer.file_exists(relative_path):
+    @commands.group(name='stream', pass_context=True, no_pm=True)
+    async def stream(self, ctx):
+        if ctx.invoked_subcommand is None:
+            await self._bot.say('Invalid stream command passed.')
+
+    @stream.command(name='play', no_pm=True)
+    async def start_stream(self, *, file: str):
+        try:
+            num = int(file)
+            _, files = self._last_ls_cache
+
+            if files is None:
+                _, files = self.get_sorted_files_and_dirs()
+
+            if num < 1 or num > len(files):
+                await self._bot.say('Invalid option.')
+                return
+
+            file = files[num - 1].name
+        except ValueError:
+            pass
+
+        if not self._file_explorer.file_exists(file):
             await self._bot.say('File does not exist.')
             return
-        await self._start_stream(ctx, relative_path)
 
-    @commands.command(name='ezstream', pass_context=True, no_pm=True)
-    async def start_stream(self, ctx, num: int):
-        _, files = self._last_ls_cache
+        await self._start_stream(file)
 
-        if files is None:
-            _, files = self.get_sorted_files_and_dirs()
-
-        if num < 1 or num > len(files):
-            await self._bot.say('Invalid option.')
-            return
-
-        relative_path = files[num-1].name
-
-        if not self._file_explorer.file_exists(relative_path):
-            await self._bot.say('File does not exist.')
-            return
-
-        await self._start_stream(ctx, relative_path)
-
-    @commands.command(name='streamskip', no_pm=True)
+    @stream.command(name='skip', no_pm=True)
     async def skip_stream(self):
         if not self._media_player.is_video_playing():
             await self._bot.say('Stream not currently playing.')
@@ -111,7 +114,7 @@ class CytubeBot(object):
         await self._bot.say('Skipping current video.')
         await self._media_player.stop_video()
 
-    @commands.command(name='streampause', no_pm=True)
+    @stream.command(name='pause', no_pm=True)
     async def pause_stream(self):
         if not self._media_player.is_video_playing():
             await self._bot.say('Stream not currently playing.')
@@ -129,7 +132,7 @@ class CytubeBot(object):
         await self.set_bot_presence()
         await self._bot.say('Stream paused at {}.'.format(self._media_player.convert_secs_to_str(video.seek_time)))
 
-    @commands.command(name='streamresume', no_pm=True)
+    @stream.command(name='resume', no_pm=True)
     async def resume_stream(self):
         if self._backup_queue is None:
             await self._bot.say('Stream not currently paused.')
@@ -139,7 +142,7 @@ class CytubeBot(object):
         self._backup_queue = None
         await self._bot.say('Resuming stream.')
 
-    @commands.command(name='streamstop', no_pm=True)
+    @stream.command(name='stop', no_pm=True)
     async def stop_stream(self):
         if not self._media_player.is_video_playing():
             await self._bot.say('Stream not currently playing.')
@@ -165,7 +168,7 @@ class CytubeBot(object):
         self._media_queue.appendleft(video)
         await self._media_player.stop_video()
 
-    @commands.command(name='streamseek', no_pm=True)
+    @stream.command(name='seek', no_pm=True)
     async def seek_stream(self, timestamp: str):
         time = parse_timestamp(timestamp)
         if time:
@@ -173,7 +176,7 @@ class CytubeBot(object):
         else:
             await self._bot.say('Invalid parameter.')
 
-    @commands.command(name='streamff', no_pm=True)
+    @stream.command(name='ff', no_pm=True)
     async def ff_stream(self, length: str):
         time = parse_timestamp(length)
         if time:
@@ -182,7 +185,7 @@ class CytubeBot(object):
         else:
             await self._bot.say('Invalid parameter.')
 
-    @commands.command(name='streamrew', no_pm=True)
+    @stream.command(name='rew', no_pm=True)
     async def rew_stream(self, length: str):
         time = parse_timestamp(length)
         if time:
@@ -203,21 +206,21 @@ class CytubeBot(object):
 
         dirs, files = self.get_sorted_files_and_dirs()
 
-        dir_str = '\n'.join([format_dir_entry(i+1, len(dirs), dir) for i, dir in enumerate(dirs)])
+        dir_str = '\n'.join([format_dir_entry(i + 1, len(dirs), dir) for i, dir in enumerate(dirs)])
         if len(dir_str) > 0:
             dir_str = '```c\n' + dir_str + '```'
 
         files = self._file_explorer.get_files_in_current_dir(extensions=['.mkv', '.mp4', '.avi'])
         files.sort(key=lambda x: x.name)
 
-        file_str = '\n'.join([format_file_entry(i+1, len(files), entry) for i, entry in enumerate(files)])
+        file_str = '\n'.join([format_file_entry(i + 1, len(files), entry) for i, entry in enumerate(files)])
         if len(file_str) > 0:
             file_str = '```c\n' + file_str + '```'
 
         await self._bot.say(output_str.format(
-            path = self._file_explorer.get_current_path(),
-            dirs = dir_str,
-            files = file_str
+            path=self._file_explorer.get_current_path(),
+            dirs=dir_str,
+            files=file_str
         ))
 
         self._last_ls_cache = (dirs, files)
@@ -263,4 +266,4 @@ class CytubeBot(object):
             await self._bot.say('Invalid option.')
             return
 
-        await self._change_directory(dirs[num-1].name)
+        await self._change_directory(dirs[num - 1].name)

@@ -57,10 +57,7 @@ class FileExplorer(object):
     def get_current_path(self, relative=True):
         if relative:
             my_path = os.path.relpath(self._current_path, self._root_path)
-            if my_path == '.':
-                return '/'
-            else:
-                return '/' + my_path
+            return '/' + my_path if my_path != '.' else '/'
         return self._current_path
 
     def build_absolute_path(self, offset_abs_path):
@@ -85,7 +82,7 @@ class FileExplorer(object):
 
     def change_directory(self, path, relative=True):
         if relative:
-            new_absolute_path = os.path.join(self._current_path, path)
+            new_absolute_path = os.path.normpath(os.path.join(self._current_path, path))
         else:
             new_absolute_path = path
 

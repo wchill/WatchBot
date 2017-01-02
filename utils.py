@@ -2,7 +2,8 @@ import re
 import humanize
 from io import StringIO
 
-async def ask_for_int(bot, message, author, lower_bound=None, upper_bound=None, timeout=30, timeout_msg=None, default=None):
+
+async def ask_for_int(bot, message, lower_bound=None, upper_bound=None, timeout=30, timeout_msg=None, default=None):
     def check(msg):
         s = msg.content
         if not s.isdigit():
@@ -15,7 +16,7 @@ async def ask_for_int(bot, message, author, lower_bound=None, upper_bound=None, 
         return True
 
     await bot.say(message)
-    message = await bot.wait_for_message(timeout=timeout, author=author, check=check)
+    message = await bot.wait_for_message(timeout=timeout, check=check)
 
     if message is None:
         if not timeout_msg:
@@ -51,7 +52,8 @@ def parse_timestamp(time_str):
 
 
 def format_dir_entry(num, max_num, entry):
-    return '{pad}{num}) {name}'.format(num=num, pad=(len(str(max_num)) - len(str(num))) * ' ', name=escape_code_block(entry.name))
+    return '{pad}{num}) {name}'.format(num=num, pad=(len(str(max_num)) - len(str(num))) * ' ',
+                                       name=escape_code_block(entry.name))
 
 
 def format_file_entry(num, max_num, entry):

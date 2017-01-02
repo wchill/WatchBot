@@ -45,9 +45,9 @@ class DiscordMediaPlayer(object):
             if track.track_type == 'Audio':
                 audio_tracks.append(
                     '{num}) {name} ({lang}, {codec} - {channels})'.format(
-                        num=track.stream_identifier + 1,
+                        num=int(track.stream_identifier or '0') + 1,
                         name=track.title or 'Untitled',
-                        lang=track.other_language[0] or 'Unknown language',
+                        lang=(track.other_language or ['Unknown language'])[0],
                         codec=track.format or 'Unknown codec',
                         channels=(str(track.channel_s) or 'Unknown') + ' channels'
                     )
@@ -55,9 +55,9 @@ class DiscordMediaPlayer(object):
             elif track.track_type == 'Text':
                 subtitle_tracks.append(
                     '{num}) {name} ({lang})'.format(
-                        num=track.stream_identifier + 1,
+                        num=int(track.stream_identifier or '0') + 1,
                         name=track.title or 'Untitled',
-                        lang=track.other_language[0] or 'Unknown language'
+                        lang=(track.other_language or ['Unknown language'])[0]
                     )
                 )
 
@@ -183,7 +183,7 @@ class DiscordMediaPlayer(object):
         print(self._ffmpeg_process.cmd)
 
         # Start FFmpeg, redirect stderr so we can keep track of encoding progress
-        await self._ffmpeg_process.run_async(stderr=asyncio.subprocess.PIPE)
+        self._ffmpeg_process.run_async(stderr=asyncio.subprocess.PIPE)
 
         # Buffer for incomplete line output
         line_buf = bytearray()
